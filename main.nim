@@ -30,10 +30,10 @@ var
   fpsman: FpsManager
 fpsman.init
 
-let side : uint32 = 5
+let side = 5
 let 
-    pixelx = 200u32
-    pixely = 200u32
+    pixelx = 200
+    pixely = 200
 
 var
     current_grid, next_grid : ref[Grid]
@@ -44,9 +44,10 @@ block:
     next_grid = box(grid)
 
 let bb = newRect2d(0f32, 0f32, float32(side * pixelx), float32(side * pixely))
-let step = 3
+var step = 3
 var elapsed_time_sec = 0
 var 
+    xform : X2d = identity[3, float32]()
     uxform : X2d = identity[3, float32]()
     pan_start : Option[P2d] = none[P2d]()
 
@@ -62,33 +63,61 @@ while not quit:
                 break
             of KeyDown:
                 let keyboardEvent = cast[KeyboardEventPtr](addr(evt))
-                case keyboardEvent.keysym.sym.char:
-                    of ' ':
+                case keyboardEvent.keysym.sym:
+                    of ' '.int:
                         freeze = not freeze
-                    of 'h':
+                    of 'h'.int:
                         uxform = identity[3, float32]()
+                    of 'c'.int:
+                        current_grid[].clear()
+                    of 's'.int:
+                        next_step(current_grid[], next_grid[])
+                    of '['.int:
+                        if step > 1:
+                            step -= 1
+                    of ']'.int:
+                        if step < 10:
+                            step += 1
                     else:
                         discard
             of MouseButtonDown:
                 let mouseButtonDownEvent = cast[MouseButtonEventPtr](addr(evt))
-                if mouseButtonDownEvent.which == BUTTON_RIGHT:
-                    pan_start = some(newP2d(mouseButtonDownEvent.x.float32, mouseButtonDownEvent.y.float32))
+                case mouseButtonDownEvent.button:
+                    of BUTTON_RIGHT:
+                        pan_start = some(newP2d(mouseButtonDownEvent.x.float32, mouseButtonDownEvent.y.float32))
+                    of BUTTON_LEFT:
+                        let inv = xform.invert()
+                        let position = newP2d(mouseButtonDownEvent.x.float32, mouseButtonDownEvent.y.float32) * inv / side.float32
+                        let row = position.x.int
+                        let column = position.y.int
+                        current_grid[][row, column] = not current_grid[][row, column]    
+                    else:
+                        discard
             of MouseButtonUp:
-                let mouseButtonDownEvent = cast[MouseButtonEventPtr](addr(evt))
-                if mouseButtonDownEvent.which == BUTTON_RIGHT and pan_start.isSome():
-                    let xlation = newP2d(mouseButtonDownEvent.x.float32, mouseButtonDownEvent.y.float32) - pan_start.get()
-                    pan_start = none[P2d]()
-                    uxform = uxform * xlate(xlation.x, xlation.y)
+                let mouseButtonUpEvent = cast[MouseButtonEventPtr](addr(evt))
+                case mouseButtonUpEvent.button:
+                    of BUTTON_RIGHT:
+                        let xlation = newP2d(mouseButtonUpEvent.x.float32, mouseButtonUpEvent.y.float32) - pan_start.get()
+                        pan_start = none[P2d]()
+                        uxform = uxform * xlate(xlation.x, xlation.y)
+                    else:
+                        discard
             of MouseWheel:
                 let mouseWheelEvent = cast[MouseWheelEventPtr](addr(evt))
+                let zoomCenter = (block:
+                    var x,y : cint
+                    getMouseState(x,y)
+                    newP2d(x.float32, y.float32)
+                )
                 if mouseWheelEvent.y > 0:
-                    uxform = uxform * scale(newP2d(windowSize.width.float32 / 2f32, windowSize.height.float32 / 2f32), 1.1f32, 1.1f32)
+                    uxform = uxform * scale(zoomCenter, 1.1f32, 1.1f32)
                 else:
-                    uxform = uxform * scale(newP2d(windowSize.width.float32 / 2f32, windowSize.height.float32 / 2f32), 0.9f32, 0.9f32)
-            of MouseMotion:
-                let mouseMotionEvent = cast[MouseMotionEventPtr](addr(evt))
-                let position = newP2d(mouseMotionEvent.x.float32, mouseMotionEvent.y.float32)
-
+                    uxform = uxform * scale(zoomCenter, 0.9f32, 0.9f32)
+            # of MouseMotion:
+            #     let mouseMotionEvent = cast[MouseMotionEventPtr](addr(evt))
+            #     if pan_start.isSome:
+            #         pan = pan * xlate(newP2d(mouseMotionEvent.x.float32, mouseMotionEvent.y.float32) - pan_start.get())
+                
             else:
                 discard
 
@@ -102,8 +131,20 @@ while not quit:
 
     render.setDrawColor 127,127,127,255        
     let f = min(windowSize.width / bb.width, windowSize.height / bb.height)
-    let xform = xlate(-bb.width / 2.0f32, -bb.height / 2.0f32) * scale(f, f) *
-        xlate(windowSize.width / 2.0f32, windowSize.height / 2.0f32) * uxform
+    # let pan_xform = block:
+    #     if pan_start.isSome():
+    #         x
+
+    let pan = block:
+        if pan_start.isSome:
+            var x, y : cint
+            getMouseState(x, y)
+            xlate(newP2d(x.float32, y.float32) - pan_start.get())
+        else:
+            identity[3, float32]()
+
+    xform = xlate(-bb.width / 2.0f32, -bb.height / 2.0f32) * scale(f, f) *
+        xlate(windowSize.width / 2.0f32, windowSize.height / 2.0f32) * uxform * pan
 
     while x <= bb.width:
         render.drawLine(newP2d(x, bb.top) * xform, newP2d(x, bb.height) * xform)
@@ -124,9 +165,6 @@ while not quit:
     if not freeze and current_time_sec > elapsed_time_sec:
         elapsed_time_sec = current_time_sec
         next_step(current_grid[], next_grid[])
-        let tmp = current_grid
-        current_grid = next_grid
-        next_grid = tmp
 
 destroy render
 destroy window

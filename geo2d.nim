@@ -43,6 +43,11 @@ proc xlate*(x, y: float32) : X2d =
     result[2,0] = x
     result[2,1] = y
 
+proc xlate*(p: P2d) : X2d =
+    result = identity[3,float32]()
+    result[2,0] = p.x
+    result[2,1] = p.y
+    
 proc scale*(center : P2d, x, y : float32) : X2d = xlate(-center.x, -center.y) * scale(x,y) * xlate(center.x, center.y)
 proc rot*(center : P2d, angle : float32) : X2d = xlate(-center.x, -center.y) * rot(angle) * xlate(center.x, center.y)
 
