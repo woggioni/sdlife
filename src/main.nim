@@ -31,8 +31,6 @@ var
   evt = sdl2.defaultEvent
   quit = false
   freeze = true
-#   fpsman: FpsManager
-# fpsman.init
 
 let side = 5
 let 
@@ -54,6 +52,7 @@ var
     xform : X2d = identity[3, float32]()
     uxform : X2d = identity[3, float32]()
     pan_start : Option[P2d] = none[P2d]()
+    invalidate = true
 
 proc main_loop(arg : pointer) {.cdecl.} =
     let windowSize = block:
@@ -65,6 +64,8 @@ proc main_loop(arg : pointer) {.cdecl.} =
             of QuitEvent:
                 quit = true
                 break
+            of WindowEvent:
+                invalidate = true
             of KeyDown:
                 let keyboardEvent = cast[KeyboardEventPtr](addr(evt))
                 case keyboardEvent.keysym.sym:
@@ -72,10 +73,13 @@ proc main_loop(arg : pointer) {.cdecl.} =
                         freeze = not freeze
                     of 'h'.int:
                         uxform = identity[3, float32]()
+                        invalidate = true
                     of 'c'.int:
                         current_grid[].clear()
+                        invalidate = true
                     of 's'.int:
                         next_step(current_grid[], next_grid[])
+                        invalidate = true
                     of '['.int:
                         if step > 0u:
                             step -= 1
@@ -95,6 +99,7 @@ proc main_loop(arg : pointer) {.cdecl.} =
                         let row = position.x.int
                         let column = position.y.int
                         current_grid[][row, column] = not current_grid[][row, column]    
+                        invalidate = true
                     else:
                         discard
             of MouseButtonUp:
@@ -104,6 +109,7 @@ proc main_loop(arg : pointer) {.cdecl.} =
                         let xlation = newP2d(mouseButtonUpEvent.x.float32, mouseButtonUpEvent.y.float32) - pan_start.get()
                         pan_start = none[P2d]()
                         uxform = uxform * xlate(xlation.x, xlation.y)
+                        invalidate = true
                     else:
                         discard
             of MouseWheel:
@@ -117,6 +123,7 @@ proc main_loop(arg : pointer) {.cdecl.} =
                     uxform = uxform * scale(zoomCenter, 1.1f32, 1.1f32)
                 else:
                     uxform = uxform * scale(zoomCenter, 0.9f32, 0.9f32)
+                invalidate = true
             # of MouseMotion:
             #     let mouseMotionEvent = cast[MouseMotionEventPtr](addr(evt))
             #     if pan_start.isSome:
@@ -125,52 +132,50 @@ proc main_loop(arg : pointer) {.cdecl.} =
             else:
                 discard
 
-    # let dt = fpsman.getFramerate() / 1000
-    # let dt = 10
-
-    render.setDrawColor 0,0,0,255
-    render.clear
-    var
-        x : float32 = bb.left
-        y : float32 = bb.top
-
-    render.setDrawColor 127,127,127,255        
-    let f = min(windowSize.width / bb.width, windowSize.height / bb.height)
-    # let pan_xform = block:
-    #     if pan_start.isSome():
-    #         x
-
     let pan = block:
         if pan_start.isSome:
+            invalidate = true
             var x, y : cint
             getMouseState(x, y)
             xlate(newP2d(x.float32, y.float32) - pan_start.get())
         else:
             identity[3, float32]()
-
-    xform = xlate(-bb.width / 2.0f32, -bb.height / 2.0f32) * scale(f, f) *
-        xlate(windowSize.width / 2.0f32, windowSize.height / 2.0f32) * uxform * pan
-
-    while x <= bb.width:
-        render.drawLine(newP2d(x, bb.top) * xform, newP2d(x, bb.height) * xform)
-        x += side.float32
-
-    while y <= bb.height:
-        render.drawLine(newP2d(bb.left, y) * xform, newP2d(bb.width, y) * xform)
-        y += side.float32
-
-    render.setDrawColor 255,255,255,255  
-    for i in 0..<current_grid.columns:
-        for j in 0..<current_grid.rows:
-            if current_grid[][i, j]:
-                render.fillRect(newRect2d((i * side).float32, (j * side).float32, side.float32, side.float32) * xform)
-    render.present
-    # fpsman.delay
-    # delay(0)
     let current_time = getTicks().uint
     if not freeze and current_time - elapsed_time > step * 50:
         elapsed_time = current_time
         next_step(current_grid[], next_grid[])
+        invalidate = true
+    if invalidate:
+        render.setDrawColor 0,0,0,255
+        render.clear
+        var
+            x : float32 = bb.left
+            y : float32 = bb.top
+
+        render.setDrawColor 127,127,127,255        
+        let f = min(windowSize.width / bb.width, windowSize.height / bb.height)
+        # let pan_xform = block:
+        #     if pan_start.isSome():
+        #         x
+
+        xform = xlate(-bb.width / 2.0f32, -bb.height / 2.0f32) * scale(f, f) *
+            xlate(windowSize.width / 2.0f32, windowSize.height / 2.0f32) * uxform * pan
+
+        while x <= bb.width:
+            render.drawLine(newP2d(x, bb.top) * xform, newP2d(x, bb.height) * xform)
+            x += side.float32
+
+        while y <= bb.height:
+            render.drawLine(newP2d(bb.left, y) * xform, newP2d(bb.width, y) * xform)
+            y += side.float32
+
+        render.setDrawColor 255,255,255,255  
+        for i in 0..<current_grid.columns:
+            for j in 0..<current_grid.rows:
+                if current_grid[][i, j]:
+                    render.fillRect(newRect2d((i * side).float32, (j * side).float32, side.float32, side.float32) * xform)
+        render.present
+        invalidate = false
 
 
 when defined(wasm):
