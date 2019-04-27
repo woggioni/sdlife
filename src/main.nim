@@ -1,10 +1,14 @@
-include options
+import options
 import sdl2, sdl2/gfx
 import grid
 import geo2d
 import mmath/smatrix
 import mmath/svector
 from nwo/utils import box
+
+when defined(wasm):
+    {.emit: "#include <emscripten.h>".}
+    proc emscripten_set_main_loop_arg*(loopFunction: proc(ctx : pointer) {.cdecl.}, ctx : pointer, fps : cint, simulate_infinite_loop : cint) {.importc.}
 
 discard sdl2.init(INIT_EVERYTHING)
 
@@ -27,8 +31,8 @@ var
   evt = sdl2.defaultEvent
   quit = false
   freeze = true
-  fpsman: FpsManager
-fpsman.init
+#   fpsman: FpsManager
+# fpsman.init
 
 let side = 5
 let 
@@ -44,14 +48,14 @@ block:
     next_grid = box(grid)
 
 let bb = newRect2d(0f32, 0f32, float32(side * pixelx), float32(side * pixely))
-var step = 3
-var elapsed_time_sec = 0
+var step : uint = 3
+var elapsed_time : uint = 0
 var 
     xform : X2d = identity[3, float32]()
     uxform : X2d = identity[3, float32]()
     pan_start : Option[P2d] = none[P2d]()
 
-while not quit:
+proc main_loop(arg : pointer) {.cdecl.} =
     let windowSize = block:
         var w, h : cint
         window.getSize(w, h)
@@ -73,7 +77,7 @@ while not quit:
                     of 's'.int:
                         next_step(current_grid[], next_grid[])
                     of '['.int:
-                        if step > 1:
+                        if step > 0u:
                             step -= 1
                     of ']'.int:
                         if step < 10:
@@ -121,7 +125,8 @@ while not quit:
             else:
                 discard
 
-    let dt = fpsman.getFramerate() / 1000
+    # let dt = fpsman.getFramerate() / 1000
+    # let dt = 10
 
     render.setDrawColor 0,0,0,255
     render.clear
@@ -153,18 +158,27 @@ while not quit:
     while y <= bb.height:
         render.drawLine(newP2d(bb.left, y) * xform, newP2d(bb.width, y) * xform)
         y += side.float32
-  
+
     render.setDrawColor 255,255,255,255  
     for i in 0..<current_grid.columns:
         for j in 0..<current_grid.rows:
             if current_grid[][i, j]:
                 render.fillRect(newRect2d((i * side).float32, (j * side).float32, side.float32, side.float32) * xform)
     render.present
-    fpsman.delay
-    let current_time_sec = fpsman.getFramecount() div step
-    if not freeze and current_time_sec > elapsed_time_sec:
-        elapsed_time_sec = current_time_sec
+    # fpsman.delay
+    # delay(0)
+    let current_time = getTicks().uint
+    if not freeze and current_time - elapsed_time > step * 50:
+        elapsed_time = current_time
         next_step(current_grid[], next_grid[])
+
+
+when defined(wasm):
+    emscripten_set_main_loop_arg(mainloop, nil, -1, 1)
+else:
+    while not quit:
+        main_loop(nil)
+        delay(0)
 
 destroy render
 destroy window
